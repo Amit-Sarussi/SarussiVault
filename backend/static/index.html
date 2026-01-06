@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LAN File Server Tester</title>
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Manrope:wght@500;700&display=swap");
+    :root {
+      --bg: radial-gradient(circle at 10% 20%, #1b2735, #090a0f 60%);
+      --card: #101621;
+      --accent: #4cc9f0;
+      --text: #e8f1ff;
+      --muted: #a6b6cf;
+      --danger: #ff6b6b;
+      --success: #7ce38b;
+      --font: "Manrope", "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      color: var(--text);
+      background: var(--bg);
+      min-height: 100vh;
+    }
+    header {
+      padding: 24px;
+      text-align: center;
+      letter-spacing: 0.02em;
+    }
+    main {
+      max-width: 1100px;
+      margin: 0 auto 48px;
+      padding: 0 20px 40px;
+      display: grid;
+      gap: 20px;
+      grid-template-columns: 2fr 1fr;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid rgba(255,255,255,0.05);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.35);
+    }
+    .full { grid-column: 1 / -1; }
+    h2 {
+      margin: 0 0 12px;
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    input[type="text"], input[type="file"] {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: #0c1019;
+      color: var(--text);
+      outline: none;
+      font-size: 14px;
+    }
+    input[type="file"] { padding: 8px 10px; }
+    button {
+      background: var(--accent);
+      color: #0b1020;
+      border: none;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 120ms ease, box-shadow 120ms ease;
+      box-shadow: 0 10px 25px rgba(76,201,240,0.3);
+    }
+    button:hover { transform: translateY(-1px); }
+    button.secondary {
+      background: #222b3a;
+      color: var(--text);
+      box-shadow: none;
+    }
+    button.danger {
+      background: var(--danger);
+      color: #0b0d18;
+      box-shadow: 0 10px 25px rgba(255,107,107,0.25);
+    }
+    .row {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      align-items: end;
+      margin-bottom: 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+    }
+    th, td {
+      padding: 10px 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      font-size: 14px;
+    }
+    th { text-align: left; color: var(--muted); font-weight: 600; }
+    tbody tr:hover { background: rgba(255,255,255,0.02); }
+    code {
+      background: #0f1825;
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+    #toast {
+      position: fixed;
+      bottom: 18px;
+      right: 18px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      background: #0b1020;
+      color: var(--text);
+      border: 1px solid rgba(255,255,255,0.06);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 200ms ease, transform 200ms ease;
+      pointer-events: none;
+      max-width: 320px;
+      line-height: 1.4;
+    }
+    #toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: rgba(255,255,255,0.08);
+      color: var(--muted);
+      margin-left: 6px;
+    }
+    #viewer {
+      background: #0c1019;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.06);
+      padding: 12px;
+      min-height: 180px;
+      overflow: auto;
+      white-space: pre;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+    }
+    .viewer-meta { color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>LAN File Server Tester <span class="pill">FastAPI</span></h1>
+    <div style="color:var(--muted);">Interact with the backend endpoints under <code>/api/*</code></div>
+  </header>
+  <main>
+    <section class="card full">
+      <h2>Directory Listing</h2>
+      <div class="row">
+        <div>
+          <label for="list-path">Path (relative to root)</label>
+          <input type="text" id="list-path" placeholder="e.g. docs/project" value="">
+        </div>
+        <div>
+          <button id="refresh">Refresh</button>
+        </div>
+      </div>
+      <div id="list-summary" style="font-size:13px;color:var(--muted);"></div>
+      <table>
+        <thead>
+          <tr><th>Name</th><th>Type</th><th>Size</th><th>Modified</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="list-body"></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>Create Directory</h2>
+      <div class="row">
+        <div>
+          <label for="mkdir-path">Parent path</label>
+          <input type="text" id="mkdir-path" placeholder="parent">
+        </div>
+        <div>
+          <label for="mkdir-name">Directory name</label>
+          <input type="text" id="mkdir-name" placeholder="new-folder">
+        </div>
+      </div>
+      <button id="mkdir-btn">Create</button>
+    </section>
+
+    <section class="card">
+      <h2>Upload File</h2>
+      <div class="row">
+        <div>
+          <label for="upload-path">Destination directory</label>
+          <input type="text" id="upload-path" placeholder="uploads">
+        </div>
+        <div>
+          <label for="upload-file">File</label>
+          <input type="file" id="upload-file">
+        </div>
+      </div>
+      <button id="upload-btn">Upload</button>
+    </section>
+
+    <section class="card">
+      <h2>Delete Path</h2>
+      <div class="row">
+        <div>
+          <label for="delete-path">Path to delete</label>
+          <input type="text" id="delete-path" placeholder="path/to/thing">
+        </div>
+      </div>
+      <button class="danger" id="delete-btn">Delete</button>
+    </section>
+
+    <section class="card">
+      <h2>Move / Rename</h2>
+      <div class="row">
+        <div>
+          <label for="move-src">Source</label>
+          <input type="text" id="move-src" placeholder="old/name.txt">
+        </div>
+        <div>
+          <label for="move-dst">Destination</label>
+          <input type="text" id="move-dst" placeholder="new/name.txt">
+        </div>
+      </div>
+      <button class="secondary" id="move-btn">Move</button>
+    </section>
+
+    <section class="card full">
+      <h2>Preview File</h2>
+      <div class="viewer-meta" id="viewer-meta">Select a file to view (text up to 20 KB)</div>
+      <div id="viewer"></div>
+    </section>
+  </main>
+
+  <div id="toast"></div>
+
+  <script>
+    const toastEl = document.getElementById("toast");
+    const listBody = document.getElementById("list-body");
+    const listSummary = document.getElementById("list-summary");
+    const viewer = document.getElementById("viewer");
+    const viewerMeta = document.getElementById("viewer-meta");
+
+    function toast(msg, ok = true) {
+      toastEl.textContent = msg;
+      toastEl.style.borderColor = ok ? "rgba(124, 227, 139, 0.5)" : "rgba(255, 107, 107, 0.5)";
+      toastEl.classList.add("show");
+      setTimeout(() => toastEl.classList.remove("show"), 2400);
+    }
+
+    function fmtBytes(bytes) {
+      if (bytes === 0) return "0 B";
+      const units = ["B","KB","MB","GB","TB"];
+      const i = Math.floor(Math.log(bytes) / Math.log(1024));
+      return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
+    }
+
+    function fmtTime(sec) {
+      return new Date(sec * 1000).toLocaleString();
+    }
+
+    async function api(method, url, body, opts = {}) {
+      const response = await fetch(url, {
+        method,
+        body,
+        headers: opts.headers || {},
+      });
+      const text = await response.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch (_) {}
+      if (!response.ok) {
+        const detail = data?.detail || response.statusText;
+        throw new Error(detail);
+      }
+      return data ?? {};
+    }
+
+    async function refreshList() {
+      const path = document.getElementById("list-path").value.trim();
+      try {
+        const entries = await api("GET", `/api/list?path=${encodeURIComponent(path)}`);
+        listBody.innerHTML = "";
+        entries.forEach(item => {
+          const tr = document.createElement("tr");
+          const relPath = (path ? path + "/" : "") + item.name;
+          tr.innerHTML = `
+            <td>${item.name}</td>
+            <td>${item.is_dir ? "dir" : "file"}</td>
+            <td>${item.is_dir ? "—" : fmtBytes(item.size)}</td>
+            <td>${fmtTime(item.mtime)}</td>
+            <td>
+              ${item.is_dir
+                ? `<button class="secondary" data-open="${item.name}">Open</button>`
+                : `<a href="/api/file?path=${encodeURIComponent(relPath)}" target="_blank">Download</a>
+                   <button data-view="${relPath}" class="secondary">View</button>`}
+            </td>`;
+          listBody.appendChild(tr);
+        });
+        listSummary.textContent = `${entries.length} item(s)`;
+        toast("Listed directory", true);
+      } catch (err) {
+        toast(err.message, false);
+      }
+    }
+
+    document.getElementById("refresh").addEventListener("click", refreshList);
+
+    listBody.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-open]");
+      if (!btn) return;
+      const current = document.getElementById("list-path").value.trim();
+      const next = [current, btn.getAttribute("data-open")].filter(Boolean).join("/");
+      document.getElementById("list-path").value = next;
+      refreshList();
+    });
+
+    listBody.addEventListener("click", async (e) => {
+      const btn = e.target.closest("button[data-view]");
+      if (!btn) return;
+      const relPath = btn.getAttribute("data-view");
+      try {
+        const resp = await fetch(`/api/file?path=${encodeURIComponent(relPath)}`);
+        if (!resp.ok) throw new Error((await resp.json())?.detail || "Unable to fetch file");
+        const contentType = resp.headers.get("content-type") || "";
+        if (!contentType.includes("text") && !contentType.includes("json")) {
+          viewer.textContent = "";
+          viewerMeta.textContent = `Preview skipped (content-type: ${contentType || "unknown"})`;
+          toast("Cannot preview non-text content", false);
+          return;
+        }
+        const text = await resp.text();
+        const max = 20000;
+        const clipped = text.length > max ? text.slice(0, max) + "\n\n[truncated]" : text;
+        viewer.textContent = clipped;
+        viewerMeta.textContent = `Previewing ${relPath}`;
+        toast("Loaded preview");
+      } catch (err) {
+        viewerMeta.textContent = "Preview failed";
+        viewer.textContent = "";
+        toast(err.message, false);
+      }
+    });
+
+    document.getElementById("mkdir-btn").addEventListener("click", async () => {
+      const path = document.getElementById("mkdir-path").value.trim();
+      const name = document.getElementById("mkdir-name").value.trim();
+      try {
+        await api("POST", "/api/mkdir", JSON.stringify({ path, name }), { headers: { "Content-Type": "application/json" }});
+        toast("Directory created");
+        refreshList();
+      } catch (err) { toast(err.message, false); }
+    });
+
+    document.getElementById("upload-btn").addEventListener("click", async () => {
+      const path = document.getElementById("upload-path").value.trim();
+      const fileInput = document.getElementById("upload-file");
+      if (!fileInput.files.length) { toast("Choose a file", false); return; }
+      const form = new FormData();
+      form.append("file", fileInput.files[0]);
+      try {
+        await api("POST", `/api/upload?path=${encodeURIComponent(path)}`, form);
+        toast("Uploaded");
+        refreshList();
+      } catch (err) { toast(err.message, false); }
+    });
+
+    document.getElementById("delete-btn").addEventListener("click", async () => {
+      const path = document.getElementById("delete-path").value.trim();
+      if (!path) { toast("Provide a path", false); return; }
+      try {
+        await api("DELETE", `/api/delete?path=${encodeURIComponent(path)}`);
+        toast("Deleted");
+        refreshList();
+      } catch (err) { toast(err.message, false); }
+    });
+
+    document.getElementById("move-btn").addEventListener("click", async () => {
+      const src = document.getElementById("move-src").value.trim();
+      const dst = document.getElementById("move-dst").value.trim();
+      if (!src || !dst) { toast("Provide source and destination", false); return; }
+      try {
+        await api("POST", "/api/move", JSON.stringify({ src, dst }), { headers: { "Content-Type": "application/json" }});
+        toast("Moved");
+        refreshList();
+      } catch (err) { toast(err.message, false); }
+    });
+
+    refreshList();
+  </script>
+</body>
+</html>
