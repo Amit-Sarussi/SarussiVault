@@ -3,7 +3,8 @@
 Minimal FastAPI backend that exposes filesystem operations under a fixed sandbox root and serves the built frontend.
 
 ## Run
-- Install deps: `pip install fastapi uvicorn`.
+- Install deps: `pip install fastapi uvicorn python-dotenv PyJWT`.
+- Create a `.env` file in the `backend/` directory with `JWT_SECRET_KEY=your-secret-key-here`.
 - Start server (from `backend/`): `uvicorn main:app --host 0.0.0.0 --port 8000`.
 - Open `http://<host>:8000` from the LAN.
 
@@ -24,7 +25,15 @@ Minimal FastAPI backend that exposes filesystem operations under a fixed sandbox
 - `DELETE /api/delete?path=target` — delete file or directory (recursive for dirs).
 - `POST /api/move` — rename/move `{ "src": "old", "dst": "new" }`, no overwrite.
 
+## Authentication
+- The backend uses JWT tokens for authentication.
+- Users must log in via `/api/login` to receive a JWT token.
+- All API endpoints (except `/api/login`) require a valid JWT token.
+- Tokens are stored in cookies and never expire.
+- Initialize user passwords by running `python init_users.py`.
+
 ## Notes
 - The root directory is created at startup if missing.
 - Errors are normalized to JSON; stack traces are not exposed.
-- The backend is intended for trusted LAN environments only; no auth is provided.
+- JWT secret key should be set in `.env` file for development, or as an environment variable in production.
+- The `.env` file should not be committed to version control.

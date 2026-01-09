@@ -1,11 +1,11 @@
 import os
 import shutil
 from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable, List, Optional
 
 from fastapi import HTTPException, UploadFile, status
 
-from models import DirectoryEntry
+from models import DirectoryEntry, HierarchyEntry
 from security import ROOT_DIR
 
 CHUNK_SIZE = 1024 * 1024  # 1MB
@@ -78,3 +78,165 @@ def move_path(src: Path, dst: Path) -> None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Destination already exists")
 
     src.rename(dst)
+
+
+def copy_path(src: Path, dst: Path) -> None:
+    if not src.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
+    if dst.exists():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Destination already exists")
+
+    if src.is_dir():
+        shutil.copytree(src, dst)
+    else:
+        shutil.copy2(src, dst)
+
+
+def build_hierarchy(path: Path) -> List[HierarchyEntry]:
+    """
+    Recursively build the full directory hierarchy starting from the given path.
+    
+    Args:
+        path: The directory path to start from (should be within ROOT_DIR)
+    
+    Returns:
+        List of HierarchyEntry objects representing the full tree structure
+    """
+    if not path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Path not found")
+    if not path.is_dir():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Not a directory")
+    
+    entries: List[HierarchyEntry] = []
+    
+    try:
+        with os.scandir(path) as it:
+            for entry in it:
+                try:
+                    stat_result = entry.stat(follow_symlinks=False)
+                    is_dir = entry.is_dir(follow_symlinks=False)
+                    
+                    # Calculate relative path from ROOT_DIR
+                    entry_path = Path(entry.path)
+                    if entry_path == ROOT_DIR:
+                        rel_path = ""
+                    else:
+                        rel_path = str(entry_path.relative_to(ROOT_DIR))
+                    
+                    hierarchy_entry = HierarchyEntry(
+                        name=entry.name,
+                        path=rel_path,
+                        is_dir=is_dir,
+                        size=stat_result.st_size,
+                        mtime=int(stat_result.st_mtime),
+                        children=None
+                    )
+                    
+                    # Recursively load children for directories
+                    if is_dir:
+                        try:
+                            children = build_hierarchy(entry_path)
+                            hierarchy_entry.children = children if children else []
+                        except (PermissionError, OSError):
+                            # If we can't read a subdirectory, just mark it as empty
+                            hierarchy_entry.children = []
+                    
+                    entries.append(hierarchy_entry)
+                except (FileNotFoundError, PermissionError, OSError):
+                    # Skip entries we can't access
+                    continue
+    except PermissionError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied"
+        )
+    
+    # Sort: folders first, then files; each group alphabetical
+    entries.sort(key=lambda e: (not e.is_dir, e.name.lower()))
+    
+    return entries
+
+
+def search_files(path: Path, query: str) -> List[HierarchyEntry]:
+    """
+    Recursively search for files and folders matching the query within the given path.
+    
+    Args:
+        path: The directory path to search in (should be within ROOT_DIR)
+        query: The search query (case-insensitive partial match)
+    
+    Returns:
+        List of HierarchyEntry objects matching the query (with full paths relative to ROOT_DIR)
+    """
+    if not path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Path not found")
+    if not path.is_dir():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Not a directory")
+    
+    query_lower = query.lower()
+    results: List[HierarchyEntry] = []
+    
+    try:
+        # Recursively walk through the directory
+        for root, dirs, files in os.walk(path):
+            root_path = Path(root)
+            
+            # Search in directory names
+            for dir_name in dirs:
+                if query_lower in dir_name.lower():
+                    dir_path = root_path / dir_name
+                    try:
+                        stat_result = dir_path.stat(follow_symlinks=False)
+                        # Calculate relative path from ROOT_DIR
+                        if dir_path == ROOT_DIR:
+                            rel_path = ""
+                        else:
+                            rel_path = str(dir_path.relative_to(ROOT_DIR))
+                        
+                        results.append(
+                            HierarchyEntry(
+                                name=dir_name,
+                                path=rel_path,
+                                is_dir=True,
+                                size=stat_result.st_size,
+                                mtime=int(stat_result.st_mtime),
+                                children=None
+                            )
+                        )
+                    except (FileNotFoundError, PermissionError, OSError):
+                        continue
+            
+            # Search in file names
+            for file_name in files:
+                if query_lower in file_name.lower():
+                    file_path = root_path / file_name
+                    try:
+                        stat_result = file_path.stat(follow_symlinks=False)
+                        # Calculate relative path from ROOT_DIR
+                        if file_path == ROOT_DIR:
+                            rel_path = ""
+                        else:
+                            rel_path = str(file_path.relative_to(ROOT_DIR))
+                        
+                        results.append(
+                            HierarchyEntry(
+                                name=file_name,
+                                path=rel_path,
+                                is_dir=False,
+                                size=stat_result.st_size,
+                                mtime=int(stat_result.st_mtime),
+                                children=None
+                            )
+                        )
+                    except (FileNotFoundError, PermissionError, OSError):
+                        continue
+    except PermissionError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied"
+        )
+    
+    # Sort: folders first, then files; each group alphabetical
+    results.sort(key=lambda e: (not e.is_dir, e.name.lower()))
+    
+    return results

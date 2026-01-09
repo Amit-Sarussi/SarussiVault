@@ -32,9 +32,10 @@ const handleLogin = async () => {
 	// Both fields are filled, attempt login
 	try {
 		await api.login(username.value, password.value);
+		// Redirect to home after successful login
 		router.push("/");
 	} catch (err) {
-		errorMessage.value = "Wrong credentials";
+		errorMessage.value = err.response?.data?.detail || "Wrong credentials";
 	}
 };
 </script>

@@ -2,6 +2,9 @@
 import { computed } from 'vue';
 import type { HierarchyItem } from '@/types/hierarchy';
 import FolderIcon from '@/assets/icons/folder-filled.svg';
+import FileIcon from '@/assets/icons/file.svg';
+import ImageIcon from '@/assets/icons/image.svg';
+import VideoIcon from '@/assets/icons/video.svg';
 
 interface Props {
 	item: HierarchyItem;
@@ -19,8 +22,30 @@ const emit = defineEmits<{
 	'item-click': [item: HierarchyItem];
 }>();
 
+// Folders can be expanded even before children are loaded
+// Check if folder has children (either loaded and non-empty, or not yet loaded)
 const hasChildren = computed(() => {
-	return props.item.type === 'folder' && props.item.children && props.item.children.length > 0;
+	if (props.item.type !== 'folder') return false;
+	// If children is undefined, we haven't loaded yet - show arrow
+	if (props.item.children === undefined) return true;
+	// If children is an array, check if it has items
+	return props.item.children.length > 0;
+});
+
+
+const iconComponent = computed(() => {
+	if (props.item.type === 'folder') return FolderIcon;
+	const name = props.item.name.toLowerCase();
+	const isImage = /\.(png|jpe?g|gif|bmp|webp|svg)$/i.test(name);
+	if (isImage) return ImageIcon;
+	const isVideo = /\.(mp4|mov|avi|mkv|webm|m4v)$/i.test(name);
+	if (isVideo) return VideoIcon;
+	return FileIcon;
+});
+
+const iconClass = computed(() => {
+	if (props.item.type === 'folder') return 'text-secondary';
+	return 'text-neutral-600';
 });
 
 const paddingLeft = computed(() => `calc(${props.level * 16}px + 12px)`);
@@ -50,7 +75,7 @@ const isChildSelected = (childId: string) => {
 		<div
 			:class="[
 				'flex items-center cursor-pointer rounded-md px-2 py-1 mx-2 transition-colors hover:bg-neutral-100',
-				isSelected && 'bg-neutral-100',
+				isSelected && 'bg-blue-50',
 			]"
 			:style="{ paddingLeft }"
 			@click="handleClick"
@@ -71,9 +96,9 @@ const isChildSelected = (childId: string) => {
 				<div v-else class="w-3 h-3"></div>
 			</div>
 
-			<!-- Folder icon -->
-			<div v-if="item.type === 'folder'" class="w-5 h-5 mr-2 shrink-0">
-				<FolderIcon class="w-full h-full text-secondary" />
+			<!-- Item icon -->
+			<div class="w-5 h-5 mr-2 shrink-0">
+				<component :is="iconComponent" class="w-full h-full" :class="iconClass" />
 			</div>
 
 			<!-- Item name -->
@@ -99,4 +124,3 @@ const isChildSelected = (childId: string) => {
 		</template>
 	</div>
 </template>
-

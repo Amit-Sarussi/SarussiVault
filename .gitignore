@@ -38,3 +38,6 @@ __screenshots__/
 # Python
 *.pyc
 __pycache__/
+
+# Environment files
+*.env

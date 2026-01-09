@@ -15,10 +15,14 @@ export default defineConfig({
     proxy: {
       // Capture any request starting with /api
       '/api': {
-        target: 'http://127.0.0.1:8080', // Your Windows FileBrowser instance
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         secure: false,
       }
     }
+  },
+  build: {
+    outDir: '../backend/static',
+    emptyOutDir: true
   }
 })
