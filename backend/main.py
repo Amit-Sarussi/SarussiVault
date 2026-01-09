@@ -1,4 +1,5 @@
 import logging
+import uuid
 import zipfile
 import tempfile
 from pathlib import Path
@@ -24,6 +25,9 @@ from models import (
     OperationResult,
     CreateFilePayload,
     SaveFilePayload,
+    ChunkedUploadInitPayload,
+    ChunkedUploadInitResponse,
+    ChunkedUploadFinalizePayload,
 )
 from security import (
     ROOT_DIR,
@@ -323,6 +327,118 @@ async def upload_multiple_files(
             continue
 
     return OperationResult(detail=f"{uploaded_count} file(s) uploaded")
+
+
+@app.post("/api/upload-chunk-init", response_model=ChunkedUploadInitResponse)
+async def init_chunked_upload(
+    payload: ChunkedUploadInitPayload,
+    current_user: str = Depends(get_current_user_from_token),
+):
+    """Initialize a chunked upload session."""
+    # Check if trying to write to shared folder
+    if payload.path == "shared" or payload.path.startswith("shared/") or (payload.path != "private" and not payload.path.startswith("private/") and payload.path == ""):
+        check_shared_write_permission(current_user)
+    
+    target_dir = resolve_path(payload.path, current_user)
+    fs.ensure_directory(target_dir)
+    
+    # Handle relative paths from folder uploads
+    if payload.relative_path:
+        # Normalize path separators
+        relative_path = payload.relative_path.replace("\\", "/")
+        path_parts = [p for p in relative_path.split("/") if p and p != "." and p != ".."]
+        
+        # Build destination path preserving directory structure
+        destination = target_dir
+        for part in path_parts:
+            destination = destination / part
+        destination = destination.resolve()
+        
+        # Ensure destination stays inside ROOT_DIR
+        if destination != ROOT_DIR and ROOT_DIR not in destination.parents:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid destination")
+    else:
+        # Single file upload
+        original_name = payload.filename
+        if "/" in original_name or "\\" in original_name or original_name.strip() == "":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename")
+        
+        safe_name = Path(original_name).name
+        destination = (target_dir / safe_name).resolve()
+        
+        # Ensure destination stays inside ROOT_DIR
+        if destination != ROOT_DIR and ROOT_DIR not in destination.parents:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid destination")
+    
+    # Generate unique upload ID
+    upload_id = str(uuid.uuid4())
+    
+    # Initialize chunked upload
+    fs.init_chunked_upload(
+        upload_id=upload_id,
+        destination=destination,
+        total_size=payload.total_size,
+        total_chunks=payload.total_chunks,
+    )
+    
+    return ChunkedUploadInitResponse(upload_id=upload_id)
+
+
+@app.post("/api/upload-chunk", response_model=OperationResult)
+async def upload_chunk(
+    upload_id: str,
+    chunk_index: int,
+    chunk: UploadFile = File(...),
+    current_user: str = Depends(get_current_user_from_token),
+):
+    """Upload a single chunk for a chunked upload."""
+    try:
+        # Read chunk data
+        chunk_data = await chunk.read()
+        await chunk.close()
+        
+        # Verify chunk size (should be <= MAX_CHUNK_SIZE, except maybe last chunk)
+        # Allow some overhead for multipart encoding (typically ~10-20%)
+        if len(chunk_data) > int(fs.MAX_CHUNK_SIZE * 1.3):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Chunk size {len(chunk_data)} exceeds maximum allowed size"
+            )
+        
+        # Save chunk
+        fs.save_chunk(upload_id, chunk_index, chunk_data)
+        
+        return OperationResult(detail="Chunk uploaded successfully")
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Failed to upload chunk {chunk_index} for upload {upload_id}: {e}")
+        # Clean up on error
+        fs.cleanup_chunked_upload(upload_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload chunk: {str(e)}"
+        )
+
+
+@app.post("/api/upload-chunk-finalize", response_model=OperationResult)
+async def finalize_chunked_upload(
+    payload: ChunkedUploadFinalizePayload,
+    current_user: str = Depends(get_current_user_from_token),
+):
+    """Finalize a chunked upload by assembling all chunks into the final file."""
+    try:
+        fs.finalize_chunked_upload(payload.upload_id)
+        return OperationResult(detail="File uploaded successfully")
+    except Exception as e:
+        logger.error(f"Failed to finalize upload {payload.upload_id}: {e}")
+        # Clean up on error
+        fs.cleanup_chunked_upload(payload.upload_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to finalize upload: {str(e)}"
+        )
 
 
 @app.post("/api/mkdir", response_model=OperationResult)

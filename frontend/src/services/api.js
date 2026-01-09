@@ -209,33 +209,217 @@ export default {
     return response.data;
   },
   
+  // Chunk size for uploads (1MB to stay well under 1.4MB limit)
+  CHUNK_SIZE: 1024 * 1024, // 1MB
+
+  // Check if file needs chunked upload (larger than chunk size)
+  _needsChunkedUpload(file) {
+    return file.size > this.CHUNK_SIZE;
+  },
+
+  // Upload a single file using chunked upload
+  async _uploadFileChunked(path, file, relativePath, storageType = 'shared', onProgress) {
+    const prefixedPath = this._prefixPath(path, storageType);
+    const filename = file.name;
+    const totalSize = file.size;
+    const totalChunks = Math.ceil(totalSize / this.CHUNK_SIZE);
+    
+    // Initialize chunked upload
+    const initResponse = await api.post('/upload-chunk-init', {
+      path: prefixedPath,
+      filename: filename,
+      total_size: totalSize,
+      total_chunks: totalChunks,
+      relative_path: relativePath || null,
+    });
+    
+    const uploadId = initResponse.data.upload_id;
+    let uploadedBytes = 0;
+    
+    try {
+      // Upload each chunk
+      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+        const start = chunkIndex * this.CHUNK_SIZE;
+        const end = Math.min(start + this.CHUNK_SIZE, totalSize);
+        const chunkBlob = file.slice(start, end);
+        
+        const chunkFormData = new FormData();
+        chunkFormData.append('chunk', chunkBlob, `chunk_${chunkIndex}`);
+        
+        // Use query params for upload_id and chunk_index, chunk file in form data
+        const response = await api.post(
+          `/upload-chunk?upload_id=${uploadId}&chunk_index=${chunkIndex}`,
+          chunkFormData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+            },
+          }
+        );
+        
+        uploadedBytes = end;
+        
+        // Update progress
+        if (onProgress) {
+          const progress = Math.round((uploadedBytes * 100) / totalSize);
+          onProgress(progress, uploadedBytes, totalSize);
+        }
+      }
+      
+      // Finalize upload
+      await api.post('/upload-chunk-finalize', {
+        upload_id: uploadId,
+      });
+      
+      return { success: true };
+    } catch (error) {
+      // Cleanup on error - try to finalize which will cleanup, or let server timeout handle it
+      console.error('Chunked upload failed:', error);
+      throw error;
+    }
+  },
+
   // Upload multiple files (supports folders via webkitdirectory)
+  // Automatically uses chunked upload for files > CHUNK_SIZE
+  // Batches small files but keeps batches under 1MB to respect Cloudflare tunnel limit
   async uploadFiles(path, files, storageType = 'shared', onProgress) {
     const prefixedPath = this._prefixPath(path, storageType);
-    const formData = new FormData();
+    let totalBytes = 0;
+    
+    // Calculate total size
     for (const file of files) {
-      formData.append('files', file);
+      totalBytes += file.size;
     }
     
-    const config = {
-      params: { path: prefixedPath },
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    };
+    let processedBytes = 0;
+    const BATCH_SIZE_LIMIT = 1024 * 1024; // 1MB batch limit to stay under 1.4MB
     
-    // Add progress tracking if callback provided
-    if (onProgress) {
-      config.onUploadProgress = (progressEvent) => {
-        if (progressEvent.total) {
-          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          onProgress(percentCompleted, progressEvent.loaded, progressEvent.total);
+    try {
+      // Separate files into those that need chunked upload and those that can be batched
+      const largeFiles = [];
+      const smallFiles = [];
+      
+      for (const file of files) {
+        if (this._needsChunkedUpload(file)) {
+          largeFiles.push(file);
+        } else {
+          smallFiles.push(file);
         }
-      };
+      }
+      
+      // Process large files with chunked upload
+      for (const file of largeFiles) {
+        const relativePath = file.webkitRelativePath || file.relativePath || null;
+        
+        const fileOnProgress = (progress, loaded, total) => {
+          // Calculate overall progress
+          const fileStartBytes = processedBytes;
+          const fileUploadedBytes = loaded;
+          const overallUploaded = fileStartBytes + fileUploadedBytes;
+          
+          if (onProgress && totalBytes > 0) {
+            const overallProgress = Math.round((overallUploaded * 100) / totalBytes);
+            onProgress(overallProgress, overallUploaded, totalBytes);
+          }
+        };
+        
+        await this._uploadFileChunked(path, file, relativePath, storageType, fileOnProgress);
+        processedBytes += file.size;
+      }
+      
+      // Process small files in batches
+      if (smallFiles.length > 0) {
+        let currentBatch = [];
+        let currentBatchSize = 0;
+        
+        for (const file of smallFiles) {
+          // If adding this file would exceed batch limit, upload current batch first
+          if (currentBatch.length > 0 && currentBatchSize + file.size > BATCH_SIZE_LIMIT) {
+            // Upload current batch
+            const formData = new FormData();
+            for (const batchFile of currentBatch) {
+              formData.append('files', batchFile);
+            }
+            
+            const config = {
+              params: { path: prefixedPath },
+              headers: {
+                'Content-Type': 'multipart/form-data',
+              },
+            };
+            
+            if (onProgress) {
+              config.onUploadProgress = (progressEvent) => {
+                if (progressEvent.total) {
+                  const batchStartBytes = processedBytes - currentBatchSize;
+                  const batchLoadedBytes = progressEvent.loaded;
+                  const overallUploaded = batchStartBytes + batchLoadedBytes;
+                  const overallProgress = Math.round((overallUploaded * 100) / totalBytes);
+                  onProgress(overallProgress, overallUploaded, totalBytes);
+                }
+              };
+            }
+            
+            await api.post('/upload-multiple', formData, config);
+            processedBytes += currentBatchSize;
+            
+            // Update progress after batch
+            if (onProgress && totalBytes > 0) {
+              const overallProgress = Math.round((processedBytes * 100) / totalBytes);
+              onProgress(overallProgress, processedBytes, totalBytes);
+            }
+            
+            // Start new batch
+            currentBatch = [];
+            currentBatchSize = 0;
+          }
+          
+          // Add file to current batch
+          currentBatch.push(file);
+          currentBatchSize += file.size;
+        }
+        
+        // Upload remaining batch
+        if (currentBatch.length > 0) {
+          const formData = new FormData();
+          for (const batchFile of currentBatch) {
+            formData.append('files', batchFile);
+          }
+          
+          const config = {
+            params: { path: prefixedPath },
+            headers: {
+              'Content-Type': 'multipart/form-data',
+            },
+          };
+          
+          if (onProgress) {
+            config.onUploadProgress = (progressEvent) => {
+              if (progressEvent.total) {
+                const batchStartBytes = processedBytes;
+                const batchLoadedBytes = progressEvent.loaded;
+                const overallUploaded = batchStartBytes + batchLoadedBytes;
+                const overallProgress = Math.round((overallUploaded * 100) / totalBytes);
+                onProgress(overallProgress, overallUploaded, totalBytes);
+              }
+            };
+          }
+          
+          await api.post('/upload-multiple', formData, config);
+          processedBytes += currentBatchSize;
+        }
+      }
+      
+      // Final progress update
+      if (onProgress && totalBytes > 0) {
+        onProgress(100, totalBytes, totalBytes);
+      }
+      
+      return { success: true, detail: `${files.length} file(s) uploaded` };
+    } catch (error) {
+      console.error('Upload failed:', error);
+      throw error;
     }
-    
-    const response = await api.post('/upload-multiple', formData, config);
-    return response.data;
   },
   
   // Delete a file or folder

@@ -84,3 +84,19 @@ class SearchResult(BaseModel):
     is_dir: bool
     size: int
     mtime: int = Field(..., description="Last modified time (epoch seconds)")
+
+
+class ChunkedUploadInitPayload(BaseModel):
+    path: str
+    filename: str
+    total_size: int
+    total_chunks: int
+    relative_path: Optional[str] = None  # For folder uploads (e.g., "folder/subfolder/file.txt")
+
+
+class ChunkedUploadInitResponse(BaseModel):
+    upload_id: str
+
+
+class ChunkedUploadFinalizePayload(BaseModel):
+    upload_id: str

@@ -1,7 +1,9 @@
 import os
 import shutil
+import tempfile
+import uuid
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 from fastapi import HTTPException, UploadFile, status
 
@@ -9,6 +11,14 @@ from models import DirectoryEntry, HierarchyEntry
 from security import ROOT_DIR
 
 CHUNK_SIZE = 1024 * 1024  # 1MB
+MAX_CHUNK_SIZE = 1024 * 1024  # 1MB (keep under 1.4MB limit)
+
+# Store active chunked uploads: upload_id -> metadata
+_chunked_uploads: Dict[str, dict] = {}
+
+# Temporary directory for chunk storage
+TEMP_CHUNKS_DIR = Path(tempfile.gettempdir()) / "sarussi_vault_chunks"
+TEMP_CHUNKS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def list_directory(path: Path) -> List[DirectoryEntry]:
@@ -155,6 +165,113 @@ def build_hierarchy(path: Path) -> List[HierarchyEntry]:
     entries.sort(key=lambda e: (not e.is_dir, e.name.lower()))
     
     return entries
+
+
+def init_chunked_upload(
+    upload_id: str,
+    destination: Path,
+    total_size: int,
+    total_chunks: int,
+) -> None:
+    """Initialize a chunked upload session."""
+    # Ensure destination parent directory exists
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Ensure destination doesn't exist
+    ensure_not_exists(destination)
+    
+    # Store upload metadata
+    _chunked_uploads[upload_id] = {
+        "destination": destination,
+        "total_size": total_size,
+        "total_chunks": total_chunks,
+        "received_chunks": set(),
+        "chunks_dir": TEMP_CHUNKS_DIR / upload_id,
+    }
+    
+    # Create directory for this upload's chunks
+    _chunked_uploads[upload_id]["chunks_dir"].mkdir(parents=True, exist_ok=True)
+
+
+def save_chunk(upload_id: str, chunk_index: int, chunk_data: bytes) -> None:
+    """Save a chunk for a chunked upload."""
+    if upload_id not in _chunked_uploads:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Upload session not found. It may have expired."
+        )
+    
+    upload_meta = _chunked_uploads[upload_id]
+    chunks_dir = upload_meta["chunks_dir"]
+    
+    # Save chunk to temporary file
+    chunk_file = chunks_dir / f"chunk_{chunk_index}"
+    with chunk_file.open("xb") as f:
+        f.write(chunk_data)
+    
+    # Track received chunk
+    upload_meta["received_chunks"].add(chunk_index)
+
+
+def finalize_chunked_upload(upload_id: str) -> None:
+    """Finalize a chunked upload by assembling all chunks into the final file."""
+    if upload_id not in _chunked_uploads:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Upload session not found. It may have expired."
+        )
+    
+    upload_meta = _chunked_uploads[upload_id]
+    destination = upload_meta["destination"]
+    total_chunks = upload_meta["total_chunks"]
+    received_chunks = upload_meta["received_chunks"]
+    chunks_dir = upload_meta["chunks_dir"]
+    
+    # Verify all chunks were received
+    if len(received_chunks) != total_chunks:
+        missing = set(range(total_chunks)) - received_chunks
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Missing chunks: {sorted(missing)}"
+        )
+    
+    try:
+        # Ensure parent directory exists
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Assemble chunks in order
+        with destination.open("xb") as output_file:
+            for chunk_index in range(total_chunks):
+                chunk_file = chunks_dir / f"chunk_{chunk_index}"
+                if not chunk_file.exists():
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Chunk {chunk_index} not found"
+                    )
+                
+                with chunk_file.open("rb") as chunk_input:
+                    shutil.copyfileobj(chunk_input, output_file)
+    finally:
+        # Clean up chunks directory
+        if chunks_dir.exists():
+            shutil.rmtree(chunks_dir)
+        
+        # Remove upload metadata
+        del _chunked_uploads[upload_id]
+
+
+def cleanup_chunked_upload(upload_id: str) -> None:
+    """Clean up a chunked upload session (e.g., on error or timeout)."""
+    if upload_id in _chunked_uploads:
+        upload_meta = _chunked_uploads[upload_id]
+        chunks_dir = upload_meta["chunks_dir"]
+        
+        # Remove chunks directory
+        if chunks_dir.exists():
+            shutil.rmtree(chunks_dir)
+        
+        # Remove upload metadata
+        del _chunked_uploads[upload_id]
 
 
 def search_files(path: Path, query: str) -> List[HierarchyEntry]:
