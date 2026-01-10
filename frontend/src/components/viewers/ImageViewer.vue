@@ -14,11 +14,11 @@ const imageUrl = computed(() => {
 </script>
 
 <template>
-  <div class="h-[90%] w-full bg-neutral-100 flex items-center justify-center overflow-auto p-4">
+  <div class="w-full h-[calc(100vh-14rem)] bg-neutral-100 flex items-center justify-center overflow-auto p-4">
     <img
       :src="imageUrl"
       :alt="filePath"
-      class="max-w-full max-h-full "
+      class="w-full h-full object-contain"
       @error="(e) => { (e.target as HTMLImageElement).style.display = 'none'; }"
     />
   </div>

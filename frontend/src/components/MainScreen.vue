@@ -169,7 +169,7 @@ watch(
 <template>
 	<div class="w-full h-screen flex flex-col">
 		<Header />
-    <div class="w-full flex flex-row flex-1 overflow-hidden">
+    <div class="w-full flex flex-row flex-1">
       <Sidebar />
       <FileManager />
     </div>

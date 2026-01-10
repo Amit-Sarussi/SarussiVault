@@ -48,7 +48,7 @@ const viewerComponent = computed(() => {
 </script>
 
 <template>
-  <div class="h-full w-full overflow-hidden">
+  <div class="w-full">
     <component :is="viewerComponent" :file-path="filePath" :storage-type="storageType" />
   </div>
 </template>

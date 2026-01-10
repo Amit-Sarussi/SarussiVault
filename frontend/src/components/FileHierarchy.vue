@@ -374,7 +374,7 @@ watch(
 </script>
 
 <template>
-	<div class="h-full w-100 overflow-y-auto border-r border-r-neutral-200 bg-white py-2">
+	<div class="h-full w-100 overflow-y-auto bg-white py-2">
 		<HierarchyNode
 			v-for="item in hierarchyItems"
 			:key="item.id"

@@ -17,6 +17,12 @@ const { currentPath, triggerRefresh, triggerHierarchyRefresh, viewedFile, storag
 const { navigateHome, navigateUp, closeFileViewer, navigateToFolder, navigateToFile } = useNavigation();
 const router = useRouter();
 
+// Computed property to get the viewed file path (handles null case and type narrowing)
+const viewedFilePath = computed(() => {
+	const path = viewedFile.value;
+	return path || null;
+});
+
 // Track the displayed path (may be invalid if user typed invalid path)
 const displayedPath = ref<string>(viewedFile.value || currentPath.value || '/');
 let isUserEditing = false;
@@ -26,6 +32,9 @@ const searchQuery = ref<string>('');
 const searchResults = ref<any[]>([]);
 const isSearching = ref<boolean>(false);
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
+
+// View mode state (table or grid)
+const viewMode = ref<'table' | 'grid'>('table');
 
 // Track navigation history for back/forward buttons
 const canGoBack = ref<boolean>(false);
@@ -78,7 +87,8 @@ watch(
 );
 
 const handleMenuClick = () => {
-	// Handle menu click
+	// Toggle between table and grid view
+	viewMode.value = viewMode.value === 'table' ? 'grid' : 'table';
 };
 
 const goHome = () => {
@@ -180,7 +190,7 @@ onMounted(() => {
 </script>
 
 <template>
-	<div class="w-full h-full">
+	<div class="w-full h-full flex flex-col">
 		<ActionsTab />
 		<div class="flex items-stretch gap-2 p-3 border-b border-b-neutral-200">
 			<TextField
@@ -202,11 +212,13 @@ onMounted(() => {
 				<IconMenu class="w-6 h-6 text-text-secondary stroke-2 z-20" />
 			</PathButton>
 		</div>
-		<div class="flex flex-row w-full h-full overflow-hidden">
-			<FileHierarchy />
-			<div v-if="viewedFile" class="flex-1 flex flex-col overflow-hidden min-w-0">
+		<div class="flex flex-row w-full flex-1">
+			<div class="w-100 max-h-[calc(100vh-11rem)] overflow-y-auto border-r border-r-neutral-200">
+				<FileHierarchy />
+			</div>
+			<div v-if="viewedFilePath" class="flex-1 flex flex-col overflow-hidden min-w-0">
 				<div class="flex items-center justify-between px-4 py-2 border-b border-neutral-200 bg-neutral-50 shrink-0">
-					<span class="text-sm text-neutral-700 truncate flex-1">{{ viewedFile }}</span>
+					<span class="text-sm text-neutral-700 truncate flex-1">{{ viewedFilePath }}</span>
 					<button
 						@click="closeViewer"
 						class="ml-4 px-3 py-1 text-sm text-neutral-700 hover:bg-neutral-200 rounded transition-colors"
@@ -214,11 +226,13 @@ onMounted(() => {
 						Close
 					</button>
 				</div>
-				<div class="flex-1 overflow-hidden min-h-0">
-					<FileViewer :file-path="viewedFile" />
+				<div class="max-h-[calc(100vh-14rem)] overflow-y-auto">
+					<FileViewer :file-path="viewedFilePath" />
 				</div>
 			</div>
-			<FileList v-else :search-results="isSearching || searchQuery ? searchResults : undefined" :search-query="searchQuery" />
+			<div v-else class="max-h-[calc(100vh-11rem)] overflow-y-auto w-full">
+				<FileList :search-results="isSearching || searchQuery ? searchResults : undefined" :search-query="searchQuery" :view-mode="viewMode" />
+			</div>
 		</div>
 	</div>
 </template>

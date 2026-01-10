@@ -3,7 +3,6 @@ import PathButton from "./PathButton.vue";
 import IconHome from "@/assets/icons/home.svg"
 import IconArrow from "@/assets/icons/arrow.svg"
 import IconRefresh from "@/assets/icons/refresh.svg"
-import IconMenu from "@/assets/icons/menu.svg"
 import IconSearch from "@/assets/icons/search.svg"
 import PathBar from "./PathBar.vue";
 
@@ -24,7 +23,6 @@ const props = withDefaults(defineProps<{
 });
 
 const emit = defineEmits<{
-	menuClick: [];
 	refresh: [];
 	goUp: [];
 	goHome: [];
@@ -33,10 +31,6 @@ const emit = defineEmits<{
 	pathChange: [path: string];
 	search: [query: string];
 }>();
-
-const handleMenuClick = () => {
-	emit('menuClick');
-};
 
 const handleRefresh = () => emit('refresh');
 const handleGoUp = () => emit('goUp');
