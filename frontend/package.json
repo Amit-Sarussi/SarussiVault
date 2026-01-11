@@ -22,6 +22,7 @@
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.1",
     "prettier": "^3.7.4",
+    "sharp": "^0.34.5",
     "tailwindcss": "^4.1.17",
     "vite": "^7.1.11",
     "vite-plugin-vue-devtools": "^8.0.3",
