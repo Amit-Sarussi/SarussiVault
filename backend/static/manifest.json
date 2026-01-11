@@ -1,6 +1,6 @@
 {
   "name": "Sarussi's Vault",
-  "short_name": "Vault",
+  "short_name": "Sarussi's Vault",
   "description": "Secure file storage and management",
   "start_url": "/",
   "display": "standalone",
