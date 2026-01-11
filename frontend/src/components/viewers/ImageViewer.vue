@@ -6,9 +6,20 @@ import type { StorageType } from '@/context/appContext';
 const props = defineProps<{
   filePath: string;
   storageType?: StorageType;
+  shareId?: string;
+  isRootFileShare?: boolean;
 }>();
 
 const imageUrl = computed(() => {
+  if (props.shareId) {
+    // For root file shares, always pass empty path to API
+    // For folder shares, use the filePath as provided
+    if (props.isRootFileShare) {
+      return api.getSharedFileUrl(props.shareId, '');
+    }
+    // For folder shares, use the filePath as provided
+    return api.getSharedFileUrl(props.shareId, props.filePath || '');
+  }
   return api.getFileUrl(props.filePath, props.storageType || 'shared');
 });
 </script>

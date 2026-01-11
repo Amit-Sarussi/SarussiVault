@@ -89,6 +89,61 @@ def resolve_path(user_path: str | None, username: str | None = None) -> Path:
     return candidate
 
 
+def resolve_guest_path(user_path: str | None, share_base_path: Path) -> Path:
+    """
+    Resolve a path for a guest accessing a shared resource.
+    
+    Ensures the path stays within the shared base path to prevent access
+    to other directories outside the shared folder/file.
+    
+    Args:
+        user_path: The relative path requested by the guest
+        share_base_path: The base path that was shared (must be within this)
+    
+    Returns:
+        The resolved path, guaranteed to be within share_base_path
+    """
+    if user_path is None:
+        user_path = ""
+    
+    if "\x00" in user_path:
+        _reject("Invalid path")
+    
+    # Normalize path separators
+    user_path = user_path.replace("\\", "/")
+    
+    # Remove leading slash for processing
+    if user_path.startswith("/"):
+        user_path = user_path[1:]
+    
+    # If share_base_path is a file, user_path should be empty (can only access the file)
+    if share_base_path.is_file():
+        if user_path and user_path != "":
+            _reject("Path not allowed")
+        return share_base_path
+    
+    # Handle empty path (root of shared directory)
+    if not user_path or user_path == "":
+        return share_base_path
+    
+    relative = Path(user_path)
+    
+    if relative.is_absolute():
+        _reject("Absolute paths are not allowed")
+    
+    if any(part == ".." for part in relative.parts):
+        _reject("Parent path traversal is not allowed")
+    
+    candidate = (share_base_path / relative).resolve()
+    
+    # Ensure candidate stays within share_base_path
+    # This prevents access to files outside the shared directory
+    if share_base_path not in candidate.parents and candidate != share_base_path:
+        _reject("Path escapes shared directory")
+    
+    return candidate
+
+
 def check_shared_write_permission(username: str) -> None:
     """Check if user has permission to write to shared folder."""
     if username not in SHARED_WRITE_USERS:

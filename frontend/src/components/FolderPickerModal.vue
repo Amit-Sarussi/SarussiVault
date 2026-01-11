@@ -135,9 +135,9 @@ watch(() => props.show, (newVal) => {
 
 <template>
 	<Modal :show="show" title="Select Destination Folder" @close="handleCancel">
-		<div class="flex flex-col gap-4 max-h-[60vh]">
-			<div v-if="loading" class="text-center text-neutral-500 py-4">Loading folders...</div>
-			<div v-else class="overflow-y-auto border border-neutral-200 rounded-md p-2">
+		<div class="flex flex-col gap-3 md:gap-4 max-h-[60vh]">
+			<div v-if="loading" class="text-center text-neutral-500 py-4 text-sm md:text-base">Loading folders...</div>
+			<div v-else class="overflow-y-auto border border-neutral-200 rounded-md p-2 text-sm md:text-base">
 				<!-- Shared Storage -->
 				<div class="mb-4">
 					<div class="text-sm font-semibold text-neutral-700 mb-2 px-2">Shared Storage</div>
@@ -207,21 +207,21 @@ watch(() => props.show, (newVal) => {
 				</div>
 			</div>
 			
-			<div v-if="selectedPath" class="text-sm text-neutral-600 px-2">
+			<div v-if="selectedPath" class="text-xs md:text-sm text-neutral-600 px-2">
 				Selected: <span class="font-medium">{{ selectedPath.path || 'Root' }}</span>
 			</div>
 			
 			<div class="flex justify-end gap-2">
 				<button
 					@click="handleCancel"
-					class="px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-100 rounded-md transition-colors cursor-pointer"
+					class="px-3 md:px-4 py-2 text-xs md:text-sm text-neutral-700 hover:bg-neutral-100 rounded-md transition-colors cursor-pointer"
 				>
 					Cancel
 				</button>
 				<button
 					@click="handleConfirm"
 					:disabled="!selectedPath"
-					class="px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-md transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+					class="px-3 md:px-4 py-2 text-xs md:text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-md transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
 				>
 					Move Here
 				</button>

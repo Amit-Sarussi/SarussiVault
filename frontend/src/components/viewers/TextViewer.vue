@@ -6,6 +6,8 @@ import { useAppContext } from '@/context/appContext';
 const props = defineProps<{
   filePath: string;
   storageType?: 'shared' | 'private';
+  shareId?: string;
+  isRootFileShare?: boolean;
 }>();
 
 const { triggerRefresh, triggerHierarchyRefresh, storageType: contextStorageType } = useAppContext();
@@ -23,7 +25,15 @@ const loadFile = async () => {
   loading.value = true;
   error.value = null;
   try {
-    const response = await api.getFileContent(props.filePath, effectiveStorageType);
+    let response: string;
+    if (props.shareId) {
+      // For root file shares, always pass empty path to API
+      // For folder shares, use the filePath as provided
+      const apiPath = props.isRootFileShare ? '' : (props.filePath || '');
+      response = await api.getSharedFileContent(props.shareId, apiPath);
+    } else {
+      response = await api.getFileContent(props.filePath, effectiveStorageType);
+    }
     content.value = response;
     originalContent.value = response;
   } catch (err) {
@@ -40,7 +50,14 @@ const saveFile = async () => {
   saving.value = true;
   error.value = null;
   try {
-    await api.saveFileContent(props.filePath, content.value, effectiveStorageType);
+    if (props.shareId) {
+      // For root file shares, always pass empty path to API
+      // For folder shares, use the filePath as provided
+      const apiPath = props.isRootFileShare ? '' : (props.filePath || '');
+      await api.saveSharedFileContent(props.shareId, apiPath, content.value);
+    } else {
+      await api.saveFileContent(props.filePath, content.value, effectiveStorageType);
+    }
     originalContent.value = content.value;
     isEditing.value = false;
     triggerRefresh();

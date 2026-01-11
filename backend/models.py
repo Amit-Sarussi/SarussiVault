@@ -100,3 +100,26 @@ class ChunkedUploadInitResponse(BaseModel):
 
 class ChunkedUploadFinalizePayload(BaseModel):
     upload_id: str
+
+
+class CreateSharePayload(BaseModel):
+    path: str
+    storage_type: str  # 'shared' or 'private'
+    permissions: str = 'read'  # 'read' or 'read_write'
+    expires_at: Optional[int] = None  # Unix timestamp, None for never
+
+
+class CreateShareResponse(BaseModel):
+    share_id: str
+    share_url: str
+    expires_at: Optional[int] = None
+
+
+class ShareInfo(BaseModel):
+    share_id: str
+    path: str
+    storage_type: str
+    username: Optional[str] = None
+    permissions: str
+    expires_at: Optional[int] = None
+    created_at: int

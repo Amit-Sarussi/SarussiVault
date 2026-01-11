@@ -6,9 +6,19 @@ import IconDownload from '@/assets/icons/download.svg';
 const props = defineProps<{
   filePath: string;
   storageType?: 'shared' | 'private';
+  shareId?: string;
+  isRootFileShare?: boolean;
 }>();
 
 const pdfUrl = computed(() => {
+  if (props.shareId) {
+    // For root file shares, always pass empty path to API
+    // For folder shares, use the filePath as provided
+    if (props.isRootFileShare) {
+      return api.getSharedFileUrl(props.shareId, '');
+    }
+    return api.getSharedFileUrl(props.shareId, props.filePath || '');
+  }
   return api.getFileUrl(props.filePath, props.storageType || 'shared');
 });
 
@@ -18,7 +28,14 @@ const fileName = computed(() => {
 });
 
 const handleDownload = () => {
-  api.downloadFile(props.filePath, props.storageType || 'shared');
+  if (props.shareId) {
+    // For root file shares, always pass empty path to API
+    // For folder shares, use the filePath as provided
+    const apiPath = props.isRootFileShare ? '' : (props.filePath || '');
+    api.downloadSharedFile(props.shareId, apiPath);
+  } else {
+    api.downloadFile(props.filePath, props.storageType || 'shared');
+  }
 };
 </script>
 

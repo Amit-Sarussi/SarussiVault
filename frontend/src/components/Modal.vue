@@ -40,9 +40,9 @@ onUnmounted(() => {
         class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
         @click="closable !== false ? handleBackdropClick : undefined"
       >
-        <div class="bg-white rounded-lg shadow-lg p-6 min-w-80 max-w-md w-full mx-4" @click.stop>
-          <div v-if="title" class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-semibold text-neutral-800">{{ title }}</h3>
+        <div class="bg-white rounded-lg shadow-lg p-4 md:p-6 min-w-0 md:min-w-80 max-w-md w-full mx-2 md:mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+          <div v-if="title" class="flex items-center justify-between mb-3 md:mb-4">
+            <h3 class="text-base md:text-lg font-semibold text-neutral-800">{{ title }}</h3>
             <button
               v-if="closable !== false"
               @click="emit('close')"

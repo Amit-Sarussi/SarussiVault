@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import MainScreen from '../components/MainScreen.vue';
+import GuestScreen from '../components/GuestScreen.vue';
 import Login from '../components/Login.vue';
 import api from '../services/api';
 
@@ -28,6 +29,20 @@ const routes = [
     name: 'MainScreenPrivate',
     component: MainScreen,
     meta: { requiresAuth: true, storageType: 'private' },
+  },
+  {
+    // Guest access without path (just shareId) - must come BEFORE pathMatch route
+    path: '/open/:shareId',
+    name: 'GuestScreenRoot',
+    component: GuestScreen,
+    meta: { requiresAuth: false, isGuest: true },
+  },
+  {
+    // Guest access: /open/:shareId/path/to/folder
+    path: '/open/:shareId/:pathMatch(.*)*',
+    name: 'GuestScreen',
+    component: GuestScreen,
+    meta: { requiresAuth: false, isGuest: true },
   }
 ];
 
@@ -39,6 +54,12 @@ const router = createRouter({
 // Navigation guard to check authentication
 router.beforeEach((to, from, next) => {
   const isAuthenticated = api.isAuthenticated();
+  
+  // Guest routes don't require authentication - check path pattern as well as meta
+  if (to.meta.isGuest || to.path.startsWith('/open/')) {
+    next();
+    return;
+  }
   
   // If user is authenticated and trying to access login, redirect to shared storage
   if (to.path === '/login' && isAuthenticated) {
@@ -53,7 +74,8 @@ router.beforeEach((to, from, next) => {
   }
   
   // If user is not authenticated and trying to access protected route, redirect to login
-  if (!isAuthenticated && to.path !== '/login') {
+  // But exclude guest routes from this check
+  if (!isAuthenticated && to.path !== '/login' && !to.path.startsWith('/open/')) {
     next('/login');
     return;
   }

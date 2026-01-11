@@ -49,9 +49,13 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       // Token expired or invalid, clear cookie and redirect to login
-      deleteCookie('jwt_token');
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
+      // But don't redirect if we're on a guest route (/open/)
+      const isGuestRoute = window.location.pathname.startsWith('/open/');
+      if (!isGuestRoute) {
+        deleteCookie('jwt_token');
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        }
       }
     }
     return Promise.reject(error);
@@ -481,5 +485,154 @@ export default {
     link.click();
     document.body.removeChild(link);
     window.URL.revokeObjectURL(url);
+  },
+  
+  // Share endpoints
+  async createShare(path, storageType, permissions = 'read', expiresAt = null) {
+    const prefixedPath = this._prefixPath(path, storageType);
+    const response = await api.post('/share', {
+      path: prefixedPath,
+      storage_type: storageType,
+      permissions: permissions,
+      expires_at: expiresAt
+    });
+    return response.data;
+  },
+  
+  async getShareInfo(shareId) {
+    const response = await api.get(`/share/${shareId}`);
+    return response.data;
+  },
+  
+  // Guest access endpoints (for shared links)
+  async listSharedDirectory(shareId, path = '') {
+    const response = await api.get(`/open/${shareId}/list`, { params: { path } });
+    return response.data;
+  },
+  
+  async getSharedFile(shareId, path = '') {
+    return this.getFileUrl(path, 'shared', shareId);
+  },
+  
+  getSharedFileUrl(shareId, path = '') {
+    const baseURL = api.defaults.baseURL || '/api';
+    const base = baseURL.endsWith('/') ? baseURL.slice(0, -1) : baseURL;
+    const params = new URLSearchParams({ path });
+    return `${base}/open/${shareId}/file?${params.toString()}`;
+  },
+  
+  async getSharedFileContent(shareId, path = '') {
+    const response = await api.get(`/open/${shareId}/file`, { 
+      params: { path },
+      responseType: 'text'
+    });
+    return response.data;
+  },
+  
+  async saveSharedFileContent(shareId, path, content) {
+    const response = await api.put(`/open/${shareId}/file`, {
+      path: path,
+      content: content
+    });
+    return response.data;
+  },
+  
+  async getSharedHierarchy(shareId, path = '') {
+    const response = await api.get(`/open/${shareId}/hierarchy`, { params: { path } });
+    return response.data;
+  },
+  
+  async searchSharedFiles(shareId, path = '', query = '') {
+    if (!query || !query.trim()) {
+      return [];
+    }
+    const response = await api.get(`/open/${shareId}/search`, { 
+      params: { path, query: query.trim() } 
+    });
+    return response.data;
+  },
+  
+  async createSharedDirectory(shareId, path, name) {
+    const response = await api.post(`/open/${shareId}/mkdir`, { path, name });
+    return response.data;
+  },
+  
+  async createSharedFile(shareId, path, name) {
+    const response = await api.post(`/open/${shareId}/create-file`, { path, name });
+    return response.data;
+  },
+  
+  async deleteSharedPath(shareId, path) {
+    const response = await api.delete(`/open/${shareId}/delete`, { params: { path } });
+    return response.data;
+  },
+  
+  async moveSharedPath(shareId, src, dst) {
+    const response = await api.post(`/open/${shareId}/move`, { src, dst });
+    return response.data;
+  },
+  
+  async copySharedPath(shareId, src, dst) {
+    const response = await api.post(`/open/${shareId}/copy`, { src, dst });
+    return response.data;
+  },
+  
+  async uploadSharedFiles(shareId, path, files, onProgress) {
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append('files', file);
+    }
+    
+    const config = {
+      params: { path },
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    };
+    
+    if (onProgress) {
+      config.onUploadProgress = (progressEvent) => {
+        if (progressEvent.total) {
+          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(progress, progressEvent.loaded, progressEvent.total);
+        }
+      };
+    }
+    
+    const response = await api.post(`/open/${shareId}/upload-multiple`, formData, config);
+    return response.data;
+  },
+  
+  async downloadSharedAsZip(shareId, paths) {
+    const response = await api.post(`/open/${shareId}/download-zip`, { paths }, {
+      responseType: 'blob'
+    });
+    
+    // Create blob URL and trigger download
+    const blob = new Blob([response.data], { type: 'application/zip' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    
+    // Determine filename
+    const filename = paths.length === 1 
+      ? `${paths[0].split('/').pop() || 'download'}.zip`
+      : 'download.zip';
+    link.download = filename;
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  },
+  
+  downloadSharedFile(shareId, path) {
+    const fileUrl = this.getSharedFileUrl(shareId, path);
+    const link = document.createElement('a');
+    link.href = fileUrl;
+    link.download = path.split('/').pop() || 'file';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   },
 };

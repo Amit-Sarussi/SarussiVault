@@ -192,7 +192,9 @@ onMounted(() => {
 <template>
 	<div class="w-full h-full flex flex-col">
 		<ActionsTab />
-		<div class="flex items-stretch gap-2 p-3 border-b border-b-neutral-200">
+		<!-- Mobile: Stack controls vertically, Desktop: Horizontal -->
+		<div class="flex flex-col md:flex-row items-stretch gap-2 p-2 md:p-3 border-b border-b-neutral-200">
+			<!-- Path controls - mobile: full width, desktop: flex-1 -->
 			<TextField
 				mode="path"
 				:path="displayedPath"
@@ -207,30 +209,35 @@ onMounted(() => {
 				@go-forward="goForward"
 				@path-change="handlePathChange"
 			/>
-			<TextField mode="search" placeholder="Search..." :search-query="searchQuery" @search="handleSearch" />
-			<PathButton @click="handleMenuClick">
-				<IconMenu class="w-6 h-6 text-text-secondary stroke-2 z-20" />
-			</PathButton>
+			<!-- Search and menu - mobile: side by side, desktop: as before -->
+			<div class="flex gap-2 items-stretch">
+				<TextField mode="search" placeholder="Search..." :search-query="searchQuery" @search="handleSearch" />
+				<PathButton @click="handleMenuClick">
+					<IconMenu class="w-5 h-5 md:w-6 md:h-6 text-text-secondary stroke-2 z-20" />
+				</PathButton>
+			</div>
 		</div>
-		<div class="flex flex-row w-full flex-1">
-			<div class="w-100 max-h-[calc(100vh-11rem)] overflow-y-auto border-r border-r-neutral-200">
+		<div class="flex flex-row w-full flex-1 overflow-hidden">
+			<!-- File Hierarchy - hidden on mobile, visible on desktop -->
+			<div class="hidden md:block w-100 max-h-[calc(100vh-11rem)] overflow-y-auto border-r border-r-neutral-200 shrink-0">
 				<FileHierarchy />
 			</div>
+			<!-- File viewer or file list -->
 			<div v-if="viewedFilePath" class="flex-1 flex flex-col overflow-hidden min-w-0">
-				<div class="flex items-center justify-between px-4 py-2 border-b border-neutral-200 bg-neutral-50 shrink-0">
-					<span class="text-sm text-neutral-700 truncate flex-1">{{ viewedFilePath }}</span>
+				<div class="flex items-center justify-between px-2 md:px-4 py-2 border-b border-neutral-200 bg-neutral-50 shrink-0">
+					<span class="text-xs md:text-sm text-neutral-700 truncate flex-1">{{ viewedFilePath }}</span>
 					<button
 						@click="closeViewer"
-						class="ml-4 px-3 py-1 text-sm text-neutral-700 hover:bg-neutral-200 rounded transition-colors"
+						class="ml-2 md:ml-4 px-2 md:px-3 py-1 text-xs md:text-sm text-neutral-700 hover:bg-neutral-200 rounded transition-colors"
 					>
 						Close
 					</button>
 				</div>
-				<div class="max-h-[calc(100vh-14rem)] overflow-y-auto">
+				<div class="max-h-[calc(100vh-14rem)] overflow-y-auto flex-1">
 					<FileViewer :file-path="viewedFilePath" />
 				</div>
 			</div>
-			<div v-else class="max-h-[calc(100vh-11rem)] overflow-y-auto w-full">
+			<div v-else class="max-h-[calc(100vh-11rem)] overflow-y-auto w-full flex-1">
 				<FileList :search-results="isSearching || searchQuery ? searchResults : undefined" :search-query="searchQuery" :view-mode="viewMode" />
 			</div>
 		</div>

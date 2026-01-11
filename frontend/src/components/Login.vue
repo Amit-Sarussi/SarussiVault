@@ -41,31 +41,33 @@ const handleLogin = async () => {
 </script>
 
 <template>
-	<div class="w-full h-screen flex justify-center items-center">
-		<div class="h-full flex flex-col justify-center items-center">
-			<div class="flex items-center gap-6 mb-2">
-				<IconLogo class="w-24" :draggable="false" />
-				<h1 class="text-5xl font-medium tracking-tight">sarussi's vault</h1>
+	<div class="w-full h-screen flex justify-center items-center p-4 md:p-0">
+		<div class="w-full max-w-md flex flex-col justify-center items-center">
+			<div class="flex flex-col md:flex-row items-center gap-3 md:gap-6 mb-4 md:mb-2">
+				<IconLogo class="w-16 h-16 md:w-24 md:h-24" :draggable="false" />
+				<h1 class="text-2xl md:text-5xl font-medium tracking-tight text-center md:text-left">sarussi's vault</h1>
 			</div>
-			<form @submit.prevent="handleLogin" class="flex flex-col items-center">
-				<p class="mb-6">Enter you're credentials:</p>
-				<div class="flex flex-col gap-4 mb-4">
+			<form @submit.prevent="handleLogin" class="w-full flex flex-col items-center">
+				<p class="mb-4 md:mb-6 text-sm md:text-base text-center">Enter you're credentials:</p>
+				<div class="w-full flex flex-col gap-3 md:gap-4 mb-4">
 					<input
 						v-model="username"
 						placeholder="Username"
-						class="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" />
+						autocomplete="username"
+						class="w-full px-4 py-3 md:py-2 text-base md:text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" />
 					<input
 						v-model="password"
 						type="password"
 						placeholder="Password"
-						class="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" />
+						autocomplete="current-password"
+						class="w-full px-4 py-3 md:py-2 text-base md:text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" />
 				</div>
-				<div v-if="errorMessage" class="text-red-500 text-sm mb-6">
+				<div v-if="errorMessage" class="w-full text-red-500 text-xs md:text-sm mb-4 md:mb-6 text-center px-2">
 					{{ errorMessage }}
 				</div>
 				<button
 					type="submit"
-					class="px-4 py-2 bg-primary cursor-pointer text-white rounded-md hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-colors">
+					class="w-full md:w-auto px-6 py-3 md:py-2 bg-primary cursor-pointer text-white rounded-md hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-colors text-base md:text-sm font-medium">
 					Connect
 				</button>
 			</form>

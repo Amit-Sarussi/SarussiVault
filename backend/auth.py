@@ -1,5 +1,7 @@
 import hashlib
 import os
+import time
+from collections import defaultdict
 from typing import Optional
 
 import jwt
@@ -28,6 +30,12 @@ USERS = {
     "Liraz": "9d7b36775f196f5771bd929cbe57335fd72dc403e622d78d4fdcc892713e2439",
     "Aharon": "2438f74ac617a30404f2a5772f7e90eafc7e5cda9a362b0fb16d81c2b337a74a",
 }
+
+# Rate limiting: track login attempts per username
+# Format: username -> list of attempt timestamps
+LOGIN_ATTEMPTS: dict[str, list[float]] = defaultdict(list)
+MAX_LOGIN_ATTEMPTS = 3
+RATE_LIMIT_WINDOW = 3600  # 1 hour in seconds
 
 
 def hash_password(password: str) -> str:
@@ -94,3 +102,34 @@ def get_current_user(token: Optional[str]) -> str:
             detail="Not authenticated",
         )
     return decode_access_token(token)
+
+
+def check_login_rate_limit(username: str) -> None:
+    """
+    Check if the user has exceeded the login attempt rate limit.
+    Raises HTTPException if rate limit is exceeded.
+    """
+    current_time = time.time()
+    attempts = LOGIN_ATTEMPTS[username]
+    
+    # Remove attempts older than the rate limit window
+    attempts[:] = [attempt_time for attempt_time in attempts if current_time - attempt_time < RATE_LIMIT_WINDOW]
+    
+    # Check if limit exceeded
+    if len(attempts) >= MAX_LOGIN_ATTEMPTS:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many login attempts. Please try again after an hour.",
+        )
+
+
+def record_login_attempt(username: str) -> None:
+    """Record a login attempt for the given username."""
+    current_time = time.time()
+    LOGIN_ATTEMPTS[username].append(current_time)
+
+
+def reset_login_attempts(username: str) -> None:
+    """Reset login attempts for a username (call after successful login)."""
+    if username in LOGIN_ATTEMPTS:
+        del LOGIN_ATTEMPTS[username]

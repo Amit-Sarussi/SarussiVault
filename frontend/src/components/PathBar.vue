@@ -65,19 +65,19 @@ const handleBlur = () => {
 
 <template>
 	<div
-		class="flex flex-row items-center gap-3 border-gray-300 border pl-2 rounded-lg w-full">
-		<IconFolder class="w-5 h-5 stroke-gray-500 stroke-2 z-20 shrink-0" />
+		class="flex flex-row items-center gap-2 md:gap-3 border-gray-300 border pl-2 rounded-lg w-full min-w-0">
+		<IconFolder class="w-4 h-4 md:w-5 md:h-5 stroke-gray-500 stroke-2 z-20 shrink-0" />
 		<input
 			v-model="inputValue"
 			type="text"
-			class="text-text-secondary text-sm font-normal w-full bg-transparent outline-none border-none"
+			class="text-text-secondary text-xs md:text-sm font-normal w-full bg-transparent outline-none border-none min-w-0"
 			@input="handleInput"
 			@keydown="handleKeyDown"
 			@focus="handleFocus"
 			@blur="handleBlur"
 		/>
-		<PathButton nav @click="handleSubmit">
-			<IconArrow class="w-6 h-6 text-text-secondary stroke-2 z-20" />
+		<PathButton nav @click="handleSubmit" class="shrink-0">
+			<IconArrow class="w-5 h-5 md:w-6 md:h-6 text-text-secondary stroke-2 z-20" />
 		</PathButton>
 	</div>
 </template>

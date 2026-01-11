@@ -13,6 +13,12 @@ const router = useRouter();
 const { currentPath, setCurrentPath, viewedFile, setViewedFile, setCurrentUsername, storageType, setStorageType } = useAppContext();
 const isInitialLoad = ref(true);
 const hasSyncedFromRoute = ref(false);
+const isMobileSidebarOpen = ref(false);
+
+// Close mobile sidebar when storage type changes (user switched storage)
+watch(() => storageType.value, () => {
+	isMobileSidebarOpen.value = false;
+});
 
 // Fetch username on mount
 onMounted(async () => {
@@ -168,10 +174,41 @@ watch(
 
 <template>
 	<div class="w-full h-screen flex flex-col">
-		<Header />
-    <div class="w-full flex flex-row flex-1">
-      <Sidebar />
-      <FileManager />
+		<Header @toggle-sidebar="isMobileSidebarOpen = !isMobileSidebarOpen" />
+    <div class="w-full flex flex-row flex-1 relative overflow-hidden">
+      <!-- Mobile sidebar overlay -->
+      <Transition name="fade">
+        <div 
+          v-if="isMobileSidebarOpen"
+          class="fixed inset-0 bg-black/50 z-40 md:hidden"
+          @click="isMobileSidebarOpen = false"
+        ></div>
+      </Transition>
+      <!-- Sidebar - drawer on mobile, always visible on desktop -->
+      <div 
+        :class="[
+          'transition-transform duration-300 ease-in-out md:translate-x-0',
+          isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
+          'fixed md:static inset-y-0 left-0 z-50 md:z-auto'
+        ]"
+      >
+        <Sidebar @close="isMobileSidebarOpen = false" />
+      </div>
+      <div class="flex-1 min-w-0 relative z-10 md:z-auto">
+        <FileManager />
+      </div>
     </div>
 	</div>
 </template>
+
+<style scoped>
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+</style>

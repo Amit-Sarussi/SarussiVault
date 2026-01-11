@@ -6,6 +6,9 @@ import { useAppContext, type StorageType } from "@/context/appContext";
 import api from "@/services/api";
 
 const { storageType, setStorageType, currentUsername, setCurrentUsername } = useAppContext();
+const emit = defineEmits<{
+	close: [];
+}>();
 
 // Fetch username on mount
 onMounted(async () => {
@@ -20,10 +23,12 @@ const isPrivate = computed(() => storageType.value === 'private');
 
 const switchToShared = () => {
 	setStorageType('shared');
+	emit('close');
 };
 
 const switchToPrivate = () => {
 	setStorageType('private');
+	emit('close');
 };
 
 const storageLabel = computed(() => {
@@ -36,7 +41,7 @@ const storageLabel = computed(() => {
 
 <template>
 	<div
-		class="bg-neutral-100 w-54 h-full border-r-neutral-200 border-r p-2 flex flex-col gap-2">
+		class="bg-neutral-100 w-64 md:w-54 h-full border-r-neutral-200 border-r p-2 md:p-2 flex flex-col gap-2 shadow-lg md:shadow-none">
 		<button
 			@click="switchToShared"
 			:class="[

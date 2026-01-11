@@ -6,6 +6,7 @@ import UploadModal from "./UploadModal.vue";
 import ProgressModal from "./ProgressModal.vue";
 import DeleteConfirmModal from "./DeleteConfirmModal.vue";
 import FolderPickerModal from "./FolderPickerModal.vue";
+import ShareModal from "./ShareModal.vue";
 import IconFileAdd from "@/assets/icons/file-add.svg";
 import IconFolderAdd from "@/assets/icons/folder-add.svg";
 import IconUpload from "@/assets/icons/upload.svg";
@@ -47,6 +48,39 @@ const hasSelection = computed(() => selectedFiles.value.size > 0 || !!viewedFile
 const hasMultipleSelection = computed(() => selectedFiles.value.size > 1);
 const isViewingFile = computed(() => !!viewedFile.value);
 const hasCopiedFiles = computed(() => copiedFiles.value.length > 0);
+
+// Share modal state
+const showShareModal = ref(false);
+const sharePath = ref('');
+const shareIsFile = computed(() => {
+	const pathToShare = viewedFile.value || (selectedFilesArray.value.length === 1 ? selectedFilesArray.value[0] : null);
+	if (!pathToShare) return false;
+	
+	// Check if it's a file (has extension or is the viewed file)
+	if (viewedFile.value) {
+		const entry = selectedEntries.value.get(pathToShare);
+		return entry ? !entry.is_dir : /\.\w+$/.test(pathToShare);
+	}
+	
+	const entry = selectedEntries.value.get(pathToShare);
+	return entry ? !entry.is_dir : false;
+});
+
+const handleShare = () => {
+	if (!hasSelection.value && !isViewingFile.value) return;
+	
+	// Determine path to share
+	if (isViewingFile.value && !hasSelection.value) {
+		sharePath.value = viewedFile.value!;
+	} else if (selectedFiles.value.size === 1) {
+		sharePath.value = selectedFilesArray.value[0];
+	} else {
+		// Multiple files selected, use current path (must be a folder)
+		sharePath.value = currentPath.value;
+	}
+	
+	showShareModal.value = true;
+};
 
 const showFilePrompt = ref(false);
 const showFolderPrompt = ref(false);
@@ -450,7 +484,7 @@ const handleDeleteCancel = () => {
 </script>
 
 <template>
-	<div class="w-full flex items-center p-2 border-b-neutral-200 border-b gap-1">
+	<div class="w-full flex items-center p-2 border-b-neutral-200 border-b gap-1 overflow-x-auto md:overflow-x-visible scrollbar-hide">
 		<ActionButton 
 			title="Add file" 
 			@click="handleAddFile"
@@ -526,6 +560,20 @@ const handleDeleteCancel = () => {
 			>
 				<template #icon>
 					<IconDelete class="w-5 h-5 text-text-secondary" :class="{ 'opacity-50': !hasWritePermission }" />
+				</template>
+			</ActionButton>
+			
+			<!-- Separator -->
+			<div class="h-6 w-px bg-neutral-300 mx-1"></div>
+			
+			<ActionButton 
+				title="Share" 
+				@click="handleShare"
+			>
+				<template #icon>
+					<svg class="w-5 h-5 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+					</svg>
 				</template>
 			</ActionButton>
 		</template>
@@ -625,6 +673,13 @@ const handleDeleteCancel = () => {
 			:count="deleteCount"
 			@confirm="handleDeleteConfirm"
 			@cancel="handleDeleteCancel"
+		/>
+		<ShareModal
+			:show="showShareModal"
+			:path="sharePath"
+			:storage-type="storageType"
+			:is-file="shareIsFile"
+			@close="showShareModal = false"
 		/>
 	</div>
 </template>

@@ -91,7 +91,10 @@ fileTypeMappings.forEach((mapping) => {
  * @param filename - The filename or path
  * @returns The view type, or 'binary' if unknown
  */
-export function getViewType(filename: string): ViewType {
+export function getViewType(filename: string | undefined | null): ViewType {
+  if (!filename || typeof filename !== 'string') {
+    return 'binary';
+  }
   const lower = filename.toLowerCase();
   const lastDot = lower.lastIndexOf('.');
   

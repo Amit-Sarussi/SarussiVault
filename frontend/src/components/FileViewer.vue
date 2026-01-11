@@ -15,10 +15,12 @@ import BinaryViewer from './viewers/BinaryViewer.vue';
 
 const props = defineProps<{
   filePath: string;
+  shareId?: string;
+  isRootFileShare?: boolean;
 }>();
 
 const { storageType } = useAppContext();
-const viewType = computed(() => getViewType(props.filePath));
+const viewType = computed(() => getViewType(props.filePath || ''));
 
 const viewerComponent = computed(() => {
   switch (viewType.value) {
@@ -49,6 +51,6 @@ const viewerComponent = computed(() => {
 
 <template>
   <div class="w-full">
-    <component :is="viewerComponent" :file-path="filePath" :storage-type="storageType" />
+    <component :is="viewerComponent" :file-path="filePath" :storage-type="storageType" :share-id="shareId" :is-root-file-share="isRootFileShare" />
   </div>
 </template>

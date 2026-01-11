@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import api from '@/services/api';
-import { useAppContext } from '@/context/appContext';
-import { useNavigation } from '@/composables/useNavigation';
 import { getViewType } from '@/utils/fileTypes';
 import FolderIcon from '@/assets/icons/folder-filled.svg';
 import FileIcon from '@/assets/icons/file.svg';
@@ -14,86 +12,48 @@ type Entry = {
 	is_dir: boolean;
 	size: number;
 	mtime: number;
-	path?: string; // Full path for search results
+	path?: string;
 };
 
 interface Props {
+	shareId: string;
+	currentPath: string;
 	searchResults?: Entry[];
 	searchQuery?: string;
 	viewMode?: 'table' | 'grid';
+	refreshSeq?: number;
 }
 
 const props = withDefaults(defineProps<Props>(), {
 	searchResults: undefined,
 	searchQuery: '',
 	viewMode: 'table',
+	refreshSeq: 0,
 });
 
-const { currentPath, refreshSeq, storageType, setSelectedFiles, setSelectedEntries, currentUsername } = useAppContext();
-const { navigateToFolder, navigateToFile } = useNavigation();
+const emit = defineEmits<{
+	'navigate-to-folder': [path: string];
+	'navigate-to-file': [path: string];
+	'selected-files': [files: Set<string>];
+	'selected-entries': [entries: Map<string, { name: string; is_dir: boolean }>];
+}>();
 
 const entries = ref<Entry[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
 const selectedKeys = ref<Set<string>>(new Set());
 const lastSelectedKey = ref<string | null>(null);
-const containerRef = ref<HTMLElement | null>(null);
 
-// Mobile selection mode: track if we're in selection mode (items are selected)
-const isSelectionMode = computed(() => selectedKeys.value.size > 0);
-
-// Long press detection for mobile
-let longPressTimer: ReturnType<typeof setTimeout> | null = null;
-let longPressTarget: Entry | null = null;
-const touchHandled = ref(false); // Track if touch event was handled to prevent click event
-const LONG_PRESS_DURATION = 500; // 500ms for long press
-
-// Track image loading states - optimized for performance
+// Track image loading states
 const imageLoadingStates = ref<Map<string, boolean>>(new Map());
 const imageLoadedStates = ref<Set<string>>(new Set());
 const imageUrlsCache = ref<Map<string, string>>(new Map());
 
-// Normalize path by removing storage prefix (for search results)
-const normalizeSearchPath = (path: string): string => {
-	if (!path) return '';
-	let normalized = path.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
-	const lower = normalized.toLowerCase();
-	
-	// Remove shared/ prefix
-	if (lower.startsWith('shared/')) {
-		normalized = normalized.substring(7);
-	} else if (lower === 'shared') {
-		normalized = '';
-	}
-	
-	// Remove users/username/ prefix
-	const lowerAfterShared = normalized.toLowerCase();
-	if (lowerAfterShared.startsWith('users/')) {
-		const parts = normalized.split('/');
-		if (parts.length >= 3 && parts[0].toLowerCase() === 'users') {
-			normalized = parts.slice(2).join('/');
-		} else if (parts.length <= 2) {
-			normalized = '';
-		}
-	}
-	
-	// Remove private/ prefix
-	const lowerFinal = normalized.toLowerCase();
-	if (lowerFinal.startsWith('private/')) {
-		normalized = normalized.substring(8);
-	} else if (lowerFinal === 'private') {
-		normalized = '';
-	}
-	
-	return normalized;
-};
-
 const sortedEntries = computed(() => {
-	// Use search results if provided, otherwise use regular entries
 	const sourceEntries = props.searchResults || entries.value;
 	return [...sourceEntries].sort((a, b) => {
 		if (a.is_dir !== b.is_dir) {
-			return a.is_dir ? -1 : 1; // folders first
+			return a.is_dir ? -1 : 1;
 		}
 		return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
 	});
@@ -124,7 +84,6 @@ const nonImageEntries = computed(() => {
 
 const formatDate = (epochSeconds: number) => {
 	const date = new Date(epochSeconds * 1000);
-	// e.g., 26/1/2023 5:54 am
 	const day = date.getDate();
 	const month = date.getMonth() + 1;
 	const year = date.getFullYear();
@@ -168,9 +127,9 @@ const getImageUrl = (entry: Entry) => {
 	}
 	
 	const fullPath = props.searchResults && entry.path
-		? normalizeSearchPath(entry.path)
-		: joinPath(currentPath.value, entry.name) || entry.name;
-	const url = api.getFileUrl(fullPath, storageType.value);
+		? entry.path
+		: joinPath(props.currentPath, entry.name) || entry.name;
+	const url = api.getSharedFileUrl(props.shareId, fullPath);
 	
 	// Cache the URL
 	imageUrlsCache.value.set(key, url);
@@ -185,7 +144,6 @@ const isImageLoading = (entry: Entry) => {
 		return false;
 	}
 	// Only show loading if explicitly marked as loading (not just "unknown")
-	// This prevents unnecessary placeholders for images that load instantly from cache
 	return imageLoadingStates.value.get(key) === true;
 };
 
@@ -204,7 +162,6 @@ const handleImageError = (entry: Entry, event: Event) => {
 const handleImageLoadStart = (entry: Entry) => {
 	const key = entryKey(entry);
 	// Only set loading state if image hasn't loaded yet
-	// This helps show placeholder for slow-loading images
 	if (!imageLoadedStates.value.has(key)) {
 		imageLoadingStates.value.set(key, true);
 	}
@@ -216,12 +173,10 @@ const joinPath = (base: string, name: string) => {
 };
 
 const entryKey = (entry: Entry) => {
-	// For search results, use the normalized path
 	if (props.searchResults && entry.path) {
-		return normalizeSearchPath(entry.path);
+		return entry.path;
 	}
-	// For regular entries, use current path + name
-	return joinPath(currentPath.value, entry.name) || entry.name;
+	return joinPath(props.currentPath, entry.name) || entry.name;
 };
 
 const loadDirectory = async (path: string) => {
@@ -229,27 +184,28 @@ const loadDirectory = async (path: string) => {
 	error.value = null;
 	selectedKeys.value = new Set();
 	lastSelectedKey.value = null;
-	setSelectedFiles(selectedKeys.value);
-	updateSelectedEntries();
+	updateSelection();
 	try {
-		const data = await api.listDirectory(path, storageType.value);
+		const data = await api.listSharedDirectory(props.shareId, path);
 		entries.value = data;
-	} catch (err) {
+	} catch (err: any) {
 		console.error('Failed to load directory', err);
-		error.value = 'Failed to load directory';
+		// If it's a "Cannot list a file" error, it means this is a file share
+		// and we shouldn't try to list it - this is expected behavior
+		if (err.response?.status === 400 && err.response?.data?.detail?.includes('Cannot list a file')) {
+			// Silently ignore - this is expected for file shares
+			error.value = null;
+			entries.value = [];
+			return;
+		}
+		error.value = err.response?.data?.detail || 'Failed to load directory';
+		entries.value = [];
 	} finally {
 		loading.value = false;
 	}
 };
 
-const selectSingle = (key: string) => {
-	selectedKeys.value = new Set([key]);
-	lastSelectedKey.value = key;
-	setSelectedFiles(selectedKeys.value);
-	updateSelectedEntries();
-};
-
-const updateSelectedEntries = () => {
+const updateSelection = () => {
 	const entriesMap = new Map<string, { name: string; is_dir: boolean }>();
 	Array.from(selectedKeys.value).forEach(key => {
 		const entry = sortedEntries.value.find(e => entryKey(e) === key);
@@ -257,200 +213,73 @@ const updateSelectedEntries = () => {
 			entriesMap.set(key, { name: entry.name, is_dir: entry.is_dir });
 		}
 	});
-	setSelectedEntries(entriesMap);
+	emit('selected-files', selectedKeys.value);
+	emit('selected-entries', entriesMap);
 };
 
-const toggleSelection = (key: string) => {
-	const next = new Set(selectedKeys.value);
-	if (next.has(key)) {
-		next.delete(key);
-	} else {
-		next.add(key);
-	}
-	selectedKeys.value = next;
+const selectSingle = (key: string) => {
+	selectedKeys.value = new Set([key]);
 	lastSelectedKey.value = key;
-	setSelectedFiles(selectedKeys.value);
-	updateSelectedEntries();
-};
-
-const selectRange = (key: string) => {
-	if (!lastSelectedKey.value) {
-		selectSingle(key);
-		return;
-	}
-
-	const sorted = sortedEntries.value;
-	const startIndex = sorted.findIndex((entry) => entryKey(entry) === lastSelectedKey.value);
-	const endIndex = sorted.findIndex((entry) => entryKey(entry) === key);
-
-	if (startIndex === -1 || endIndex === -1) {
-		selectSingle(key);
-		return;
-	}
-
-	const [from, to] = startIndex < endIndex ? [startIndex, endIndex] : [endIndex, startIndex];
-	const next = new Set(selectedKeys.value);
-	for (let i = from; i <= to; i += 1) {
-		next.add(entryKey(sorted[i]));
-	}
-	selectedKeys.value = next;
-	lastSelectedKey.value = key;
-	setSelectedFiles(selectedKeys.value);
-	updateSelectedEntries();
-};
-
-// Detect if we're on a touch device (mobile) - check immediately
-const isTouchDevice = ref('ontouchstart' in window || navigator.maxTouchPoints > 0);
-
-// Handle long press on mobile - starts selection mode
-const handleTouchStart = (entry: Entry, event: TouchEvent) => {
-	if (!isTouchDevice.value) return;
-	
-	touchHandled.value = false;
-	longPressTarget = entry;
-	longPressTimer = setTimeout(() => {
-		// Long press detected - enter selection mode and select this item
-		const key = entryKey(entry);
-		if (!selectedKeys.value.has(key)) {
-			selectSingle(key);
-		}
-		touchHandled.value = true;
-		longPressTimer = null;
-		longPressTarget = null;
-		// Provide haptic feedback if available
-		if (navigator.vibrate) {
-			navigator.vibrate(50);
-		}
-	}, LONG_PRESS_DURATION);
-};
-
-const handleTouchEnd = (entry: Entry, event: TouchEvent) => {
-	if (!isTouchDevice.value) return;
-	
-	const wasLongPress = touchHandled.value;
-	
-	// Clear long press timer if it's still running (quick tap)
-	if (longPressTimer) {
-		clearTimeout(longPressTimer);
-		longPressTimer = null;
-		touchHandled.value = true; // Mark as handled to prevent click event
-		
-		// Quick tap - not a long press
-		if (isSelectionMode.value) {
-			// In selection mode: toggle selection
-			const key = entryKey(entry);
-			toggleSelection(key);
-		} else {
-			// Not in selection mode: open file/folder
-			if (!entry.is_dir) {
-				if (props.searchResults && entry.path) {
-					const normalizedPath = normalizeSearchPath(entry.path);
-					navigateToFile(normalizedPath);
-				} else {
-					const filePath = joinPath(currentPath.value, entry.name);
-					navigateToFile(filePath);
-				}
-			} else {
-				if (props.searchResults && entry.path) {
-					const normalizedPath = normalizeSearchPath(entry.path);
-					navigateToFolder(normalizedPath);
-				} else {
-					const newPath = joinPath(currentPath.value, entry.name);
-					navigateToFolder(newPath);
-				}
-			}
-		}
-	} else if (wasLongPress) {
-		// Long press was completed, selection already happened
-		touchHandled.value = true;
-	}
-	
-	longPressTarget = null;
-};
-
-const handleTouchMove = () => {
-	// Cancel long press if user moves finger
-	if (longPressTimer) {
-		clearTimeout(longPressTimer);
-		longPressTimer = null;
-		longPressTarget = null;
-		touchHandled.value = false;
-	}
+	updateSelection();
 };
 
 const handleRowClick = (entry: Entry, event: MouseEvent) => {
-	// On mobile, if touch event was already handled, ignore click
-	if (isTouchDevice.value && touchHandled.value) {
-		touchHandled.value = false; // Reset for next interaction
-		return;
-	}
+	const key = entryKey(entry);
 	
-	const key = joinPath(currentPath.value, entry.name) || entry.name;
-
-	// On mobile, if we're in selection mode, toggle selection
-	if (isTouchDevice.value && isSelectionMode.value) {
-		toggleSelection(key);
-		return;
-	}
-
 	if (event.shiftKey) {
-		selectRange(key);
-		return;
-	}
-
-	if (event.ctrlKey || event.metaKey) {
-		toggleSelection(key);
-		return;
-	}
-
-	// On mobile/touch devices (when not in selection mode), open files/folders immediately on single tap
-	if (isTouchDevice.value && !isSelectionMode.value) {
-		// For files on mobile, open immediately
-		if (!entry.is_dir) {
-			if (props.searchResults && entry.path) {
-				const normalizedPath = normalizeSearchPath(entry.path);
-				navigateToFile(normalizedPath);
-			} else {
-				const filePath = joinPath(currentPath.value, entry.name);
-				navigateToFile(filePath);
+		// Range selection - simplified
+		if (!lastSelectedKey.value) {
+			selectSingle(key);
+			return;
+		}
+		const sorted = sortedEntries.value;
+		const startIndex = sorted.findIndex(e => entryKey(e) === lastSelectedKey.value);
+		const endIndex = sorted.findIndex(e => entryKey(e) === key);
+		if (startIndex !== -1 && endIndex !== -1) {
+			const [from, to] = startIndex < endIndex ? [startIndex, endIndex] : [endIndex, startIndex];
+			const next = new Set(selectedKeys.value);
+			for (let i = from; i <= to; i++) {
+				next.add(entryKey(sorted[i]));
 			}
-		} else {
-			// For folders on mobile, navigate immediately
-			if (props.searchResults && entry.path) {
-				const normalizedPath = normalizeSearchPath(entry.path);
-				navigateToFolder(normalizedPath);
-			} else {
-				const newPath = joinPath(currentPath.value, entry.name);
-				navigateToFolder(newPath);
-			}
+			selectedKeys.value = next;
+			lastSelectedKey.value = key;
+			updateSelection();
 		}
 		return;
 	}
-
-	// Desktop behavior: single click selects, double click opens
-	// Just select the item - double click handler will open it
+	
+	if (event.ctrlKey || event.metaKey) {
+		// Toggle selection
+		const next = new Set(selectedKeys.value);
+		if (next.has(key)) {
+			next.delete(key);
+		} else {
+			next.add(key);
+		}
+		selectedKeys.value = next;
+		lastSelectedKey.value = key;
+		updateSelection();
+		return;
+	}
+	
+	// Single selection
 	selectSingle(key);
 };
 
 const handleRowDoubleClick = (entry: Entry) => {
-	// Desktop: double click opens files/folders
-	// For search results, use the normalized path
 	if (props.searchResults && entry.path) {
-		const normalizedPath = normalizeSearchPath(entry.path);
 		if (entry.is_dir) {
-			navigateToFolder(normalizedPath);
+			emit('navigate-to-folder', entry.path);
 		} else {
-			navigateToFile(normalizedPath);
+			emit('navigate-to-file', entry.path);
 		}
 	} else {
-		// For regular entries, use current path + name
 		if (entry.is_dir) {
-			const newPath = joinPath(currentPath.value, entry.name);
-			navigateToFolder(newPath);
+			const newPath = joinPath(props.currentPath, entry.name);
+			emit('navigate-to-folder', newPath);
 		} else {
-			// Open file for viewing
-			const filePath = joinPath(currentPath.value, entry.name);
-			navigateToFile(filePath);
+			const filePath = joinPath(props.currentPath, entry.name);
+			emit('navigate-to-file', filePath);
 		}
 	}
 };
@@ -458,55 +287,45 @@ const handleRowDoubleClick = (entry: Entry) => {
 const handleContainerClick = (event: MouseEvent) => {
 	const target = event.target as HTMLElement | null;
 	if (!target) return;
-
+	
 	const row = target.closest('[data-entry-row]');
 	if (!row) {
 		selectedKeys.value = new Set();
 		lastSelectedKey.value = null;
-		setSelectedFiles(selectedKeys.value);
-		updateSelectedEntries();
+		updateSelection();
 	}
 };
-
-const handleOutsideClick = (event: MouseEvent) => {
-	if (!containerRef.value) return;
-	if (!containerRef.value.contains(event.target as Node)) {
-		selectedKeys.value = new Set();
-		lastSelectedKey.value = null;
-		setSelectedFiles(selectedKeys.value);
-		updateSelectedEntries();
-	}
-};
-
-onMounted(() => {
-	document.addEventListener('click', handleOutsideClick);
-});
-
-onBeforeUnmount(() => {
-	document.removeEventListener('click', handleOutsideClick);
-});
 
 watch(
-	() => currentPath.value,
+	() => props.currentPath,
 	(path) => {
-		// Only load directory if not showing search results
 		if (!props.searchResults) {
-			loadDirectory(path);
+			// Try to load directory, but catch errors gracefully
+			loadDirectory(path).catch(err => {
+				// If it's a "Cannot list a file" error, it means this is a file share
+				// and we shouldn't try to list it - this is expected behavior
+				if (err.response?.status === 400 && err.response?.data?.detail?.includes('Cannot list a file')) {
+					// Silently ignore - this is expected for file shares
+					return;
+				}
+				// Re-throw other errors
+				throw err;
+			});
 		}
 	},
 	{ immediate: true }
 );
 
 watch(
-	() => refreshSeq.value,
+	() => props.refreshSeq,
 	() => {
-		loadDirectory(currentPath.value);
+		loadDirectory(props.currentPath);
 	}
 );
 
 // Clear loading states when path changes (entries completely change)
 watch(
-	() => currentPath.value,
+	() => props.currentPath,
 	() => {
 		// Clear loading states but keep loaded states for browser cache
 		imageLoadingStates.value = new Map();
@@ -515,9 +334,7 @@ watch(
 </script>
 
 <template>
-	<div ref="containerRef" class="h-full w-full bg-white overflow-auto" @click.capture="handleContainerClick">
-		<!-- Mobile Card View / Desktop Table View -->
-		<!-- Mobile: Card view -->
+	<div class="h-full w-full bg-white overflow-auto" @click.capture="handleContainerClick">
 		<div v-if="viewMode === 'table'" class="md:hidden">
 			<div v-if="loading" class="px-3 py-4 text-neutral-500 text-sm">Loading...</div>
 			<div v-else-if="error" class="px-3 py-4 text-red-800 text-sm">{{ error }}</div>
@@ -533,9 +350,6 @@ watch(
 					:class="selectedKeys.has(entryKey(entry)) ? 'bg-blue-50 border-blue-300' : 'hover:bg-blue-50'"
 					@click="handleRowClick(entry, $event)"
 					@dblclick="handleRowDoubleClick(entry)"
-					@touchstart="handleTouchStart(entry, $event)"
-					@touchend="handleTouchEnd(entry, $event)"
-					@touchmove="handleTouchMove"
 				>
 					<div class="flex items-start gap-3">
 						<component :is="iconFor(entry)" class="w-6 h-6 shrink-0 mt-0.5" :class="entry.is_dir ? 'text-secondary' : 'text-neutral-600'" />
@@ -551,7 +365,7 @@ watch(
 				</div>
 			</div>
 		</div>
-		<!-- Desktop: Table view -->
+		
 		<table v-if="viewMode === 'table'" class="hidden md:table w-full text-sm">
 			<thead class="sticky top-0 bg-neutral-50 border-b border-neutral-200 text-neutral-800">
 				<tr>
@@ -582,9 +396,6 @@ watch(
 					:class="selectedKeys.has(entryKey(entry)) ? 'bg-blue-50' : ''"
 					@click="handleRowClick(entry, $event)"
 					@dblclick="handleRowDoubleClick(entry)"
-					@touchstart="handleTouchStart(entry, $event)"
-					@touchend="handleTouchEnd(entry, $event)"
-					@touchmove="handleTouchMove"
 				>
 					<td class="px-3">
 						<div class="flex items-center gap-2 overflow-hidden">
@@ -593,14 +404,12 @@ watch(
 						</div>
 					</td>
 					<td class="px-3 py-3 text-neutral-600">{{ formatDate(entry.mtime) }}</td>
-					<td class="px-3 py-3 text-neutral-600">
-						{{ entry.is_dir ? 'Folder' : 'File' }}
-					</td>
+					<td class="px-3 py-3 text-neutral-600">{{ entry.is_dir ? 'Folder' : 'File' }}</td>
 					<td class="px-3 py-3 text-neutral-600 text-right">{{ entry.is_dir ? '' : formatSize(entry.size) }}</td>
 				</tr>
 			</tbody>
 		</table>
-
+		
 		<!-- Grid View -->
 		<div v-else class="p-2 md:p-4">
 			<div v-if="loading" class="text-neutral-500 text-center py-8 text-sm md:text-base">Loading...</div>
@@ -619,9 +428,6 @@ watch(
 					:class="selectedKeys.has(entryKey(entry)) ? 'border-blue-500 ring-2 ring-blue-200' : ''"
 					@click="handleRowClick(entry, $event)"
 					@dblclick="handleRowDoubleClick(entry)"
-					@touchstart="handleTouchStart(entry, $event)"
-					@touchend="handleTouchEnd(entry, $event)"
-					@touchmove="handleTouchMove"
 				>
 					<!-- Loading placeholder -->
 					<div
@@ -649,9 +455,6 @@ watch(
 					:class="selectedKeys.has(entryKey(entry)) ? 'bg-blue-50 border-blue-300' : ''"
 					@click="handleRowClick(entry, $event)"
 					@dblclick="handleRowDoubleClick(entry)"
-					@touchstart="handleTouchStart(entry, $event)"
-					@touchend="handleTouchEnd(entry, $event)"
-					@touchmove="handleTouchMove"
 				>
 					<!-- Icon for non-image files/folders -->
 					<div class="mb-1 md:mb-2 bg-neutral-100 flex items-center justify-center w-12 h-12 md:w-16 md:h-16">
